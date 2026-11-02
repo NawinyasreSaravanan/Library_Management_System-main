@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Students — Admin LMS</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar"><div class="topbar-left"><span class="topbar-title">All Students</span></div></header>
+    <main class="content">
+      <div class="card">
+        <div class="card-header">Registered Students
+          <div class="search-wrap"><span class="search-icon">&#128269;</span><input type="text" id="search" placeholder="Search..." oninput="filterStudents()"></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Member ID</th><th>Email</th><th>Phone</th><th>Joined</th><th>Action</th></tr></thead>
+            <tbody id="students-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script>
+  if (!requireAuth('admin')) throw '';
+  let allStudents = [];
+  async function load() {
+    const r = await apiFetch('/auth/students');
+    const tbody = document.getElementById('students-tbody');
+    if (!r?.ok) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;padding:24px">Error loading</td></tr>'; return; }
+    allStudents = r.data;
+    render(allStudents);
+  }
+  function render(data) {
+    const tbody = document.getElementById('students-tbody');
+    if (!data.length) { tbody.innerHTML='<tr><td colspan="6"><div class="empty-state"><p>No students found</p></div></td></tr>'; return; }
+    tbody.innerHTML = data.map(s => `
+      <tr>
+        <td><a class="name-link" title="View membership card" onclick="showMemberCard(${s.id})"><strong>${esc(s.name)}</strong></a></td>
+        <td><span class="badge badge-info">${s.member_id||'—'}</span></td>
+        <td>${s.email}</td>
+        <td>${s.phone||'—'}</td>
+        <td>${formatDate(s.created_at)}</td>
+        <td><button class="btn btn-outline btn-sm" onclick="sendMsg(${s.id},${esc(JSON.stringify(s.name))})">Send Notification</button></td>
+      </tr>`).join('');
+  }
+  function filterStudents() {
+    const q = document.getElementById('search').value.toLowerCase();
+    render(allStudents.filter(s => s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q) || (s.member_id||'').toLowerCase().includes(q)));
+  }
+  async function sendMsg(uid, name) {
+    const msg = prompt(`Send notification to ${name}:`);
+    if (!msg) return;
+    const r = await apiFetch('/notifications/send', { method:'POST', body:JSON.stringify({user_id:uid,title:'Message from Library',message:msg,type:'info'}) });
+    if (r?.ok) showToast('Notification sent!','success');
+    else showToast('Error sending','error');
+  }
+  load();
+</script>
+</body>
+</html>

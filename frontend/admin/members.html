@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Members — Admin LMS</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar"><div class="topbar-left"><span class="topbar-title">Membership Management</span></div></header>
+    <main class="content">
+      <!-- Pending approvals -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header" style="background:#fef3c7">Pending Approvals <span id="pending-count" class="badge badge-warning">0</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Student</th><th>Plan</th><th>Amount</th><th>Txn ID</th><th>Applied On</th><th>Actions</th></tr></thead>
+            <tbody id="pending-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- All members -->
+      <div class="card">
+        <div class="card-header">All Members</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Student</th><th>Plan</th><th>Amount</th><th>Txn ID</th><th>Status</th><th>Valid Till</th></tr></thead>
+            <tbody id="all-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script>
+  if (!requireAuth('admin')) throw '';
+  let allData = [];
+  async function load() {
+    const r = await apiFetch('/membership/all');
+    if (!r?.ok) return;
+    allData = r.data;
+    const pending = allData.filter(m => m.status === 'pending');
+    document.getElementById('pending-count').textContent = pending.length;
+    const ptbody = document.getElementById('pending-tbody');
+    if (!pending.length) ptbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><p>No pending approvals</p></div></td></tr>';
+    else ptbody.innerHTML = pending.map(m => `
+      <tr>
+        <td><a class="name-link" title="View membership card" onclick="showMemberCard(${m.user_id})"><strong>${esc(m.name)}</strong></a><br><small>${esc(m.member_id)} &bull; ${esc(m.email)}</small></td>
+        <td><span class="badge badge-purple">${m.plan}</span></td>
+        <td>Rs.${m.amount}</td>
+        <td>${m.txn_id||'—'}</td>
+        <td>${formatDate(m.payment_date)}</td>
+        <td>
+          <button class="btn btn-success btn-sm" onclick="approve(${m.user_id},${esc(JSON.stringify(m.name))})">Approve</button>
+          <button class="btn btn-danger btn-sm" onclick="reject(${m.user_id},${esc(JSON.stringify(m.name))})">Reject</button>
+        </td>
+      </tr>`).join('');
+    const approved = allData.filter(m => m.status !== 'pending');
+    const atbody = document.getElementById('all-tbody');
+    if (!approved.length) atbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><p>No members yet</p></div></td></tr>';
+    else atbody.innerHTML = approved.map(m => `
+      <tr>
+        <td><a class="name-link" title="View membership card" onclick="showMemberCard(${m.user_id})"><strong>${esc(m.name)}</strong></a><br><small>${esc(m.member_id)}</small></td>
+        <td><span class="badge badge-purple">${m.plan}</span></td>
+        <td>Rs.${m.amount}</td>
+        <td>${m.txn_id||'—'}</td>
+        <td><span class="badge badge-${m.status==='approved'?'success':'danger'}">${m.status}</span></td>
+        <td>${formatDate(m.end_date)}</td>
+      </tr>`).join('');
+  }
+  async function approve(uid, name) {
+    if (!confirm(`Approve membership for ${name}?`)) return;
+    const r = await apiFetch(`/membership/approve/${uid}`, { method:'POST' });
+    if (r?.ok) { showToast('Membership approved! Student notified.','success'); load(); }
+    else showToast(r?.data?.error||'Error','error');
+  }
+  async function reject(uid, name) {
+    const reason = prompt(`Reason for rejecting ${name}'s membership (optional):`);
+    const r = await apiFetch(`/membership/reject/${uid}`, { method:'POST', body:JSON.stringify({reason}) });
+    if (r?.ok) { showToast('Membership rejected','warning'); load(); }
+    else showToast('Error','error');
+  }
+  load();
+</script>
+</body>
+</html>

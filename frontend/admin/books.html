@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Books — Admin LMS</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-left"><span class="topbar-title">Books Management</span></div>
+      <div class="topbar-right"><button class="btn btn-primary" onclick="openModal('add-modal')">+ Add Book</button></div>
+    </header>
+    <main class="content">
+      <div class="card">
+        <div class="card-header">
+          All Books
+          <div class="filter-bar" style="margin:0">
+            <div class="search-wrap"><span class="search-icon">&#128269;</span><input type="text" id="search" placeholder="Search books..." oninput="debounce(loadBooks,400)()"></div>
+            <select id="cat-filter" onchange="loadBooks()" style="width:160px"><option value="">All Categories</option></select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Title</th><th>Author</th><th>Category</th><th>ISBN</th><th>Copies</th><th>Available</th><th>Actions</th></tr></thead>
+            <tbody id="books-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal">
+    <div class="modal-header"><span id="modal-title">Add New Book</span><button class="close-btn" onclick="closeModal('add-modal')">&times;</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id">
+      <div class="form-row">
+        <div class="form-group"><label>Title *</label><input type="text" id="f-title" placeholder="Book title"></div>
+        <div class="form-group"><label>Author *</label><input type="text" id="f-author" placeholder="Author name"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>ISBN</label><input type="text" id="f-isbn" placeholder="ISBN number"></div>
+        <div class="form-group"><label>Category</label><input type="text" id="f-cat" placeholder="e.g. Science, Math"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Total Copies</label><input type="number" id="f-copies" value="1" min="1"></div>
+        <div class="form-group"><label>Cover Image URL <span style="font-weight:400;color:var(--muted)">(optional — auto-fetched from ISBN)</span></label><input type="url" id="f-cover" placeholder="https://..."></div>
+      </div>
+      <div class="form-group"><label>Description</label><textarea id="f-desc" rows="3" placeholder="Brief description..."></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('add-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveBook()">Save Book</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/script.js"></script>
+<script>
+  if (!requireAuth('admin')) throw '';
+
+  async function loadCategories() {
+    const r = await apiFetch('/books/categories');
+    if (!r?.ok) return;
+    const sel = document.getElementById('cat-filter');
+    r.data.forEach(c => sel.innerHTML += `<option value="${c}">${c}</option>`);
+  }
+
+  let BOOKS = [];
+  async function loadBooks() {
+    const search = document.getElementById('search').value;
+    const cat    = document.getElementById('cat-filter').value;
+    const r = await apiFetch(`/books/?search=${encodeURIComponent(search)}&category=${encodeURIComponent(cat)}`);
+    const tbody = document.getElementById('books-tbody');
+    if (!r?.ok) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px">Error loading</td></tr>'; return; }
+    if (!r.data.length) { tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">&#128218;</div><p>No books found</p></div></td></tr>'; return; }
+    BOOKS = r.data;
+    tbody.innerHTML = r.data.map(b => `
+      <tr>
+        <td>
+          <div style="display:flex;gap:12px;align-items:center;min-width:260px">
+            <div class="book-thumb">${bookCover(b)}</div>
+            <div><strong>${esc(b.title)}</strong>
+              <div class="clamp-2" style="font-size:12px;color:var(--muted);max-width:340px">${esc(b.description)}</div></div>
+          </div>
+        </td>
+        <td>${esc(b.author)}</td>
+        <td>${b.category ? `<span class="badge badge-info">${esc(b.category)}</span>` : '—'}</td>
+        <td>${esc(b.isbn)||'—'}</td>
+        <td>${b.total_copies}</td>
+        <td><span class="badge badge-${b.available>0?'success':'danger'}">${b.available}</span></td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="editBook(${b.id})">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteBook(${b.id})">Delete</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  function editBook(id) {
+    const b = BOOKS.find(x => x.id === id); if (!b) return;
+    document.getElementById('modal-title').textContent = 'Edit Book';
+    document.getElementById('edit-id').value  = b.id;
+    document.getElementById('f-title').value  = b.title;
+    document.getElementById('f-author').value = b.author;
+    document.getElementById('f-isbn').value   = b.isbn||'';
+    document.getElementById('f-cat').value    = b.category||'';
+    document.getElementById('f-copies').value = b.total_copies;
+    document.getElementById('f-cover').value  = b.cover_url||'';
+    document.getElementById('f-desc').value   = b.description||'';
+    openModal('add-modal');
+  }
+
+  function resetForm() {
+    document.getElementById('modal-title').textContent = 'Add New Book';
+    ['edit-id','f-title','f-author','f-isbn','f-cat','f-cover','f-desc'].forEach(id => document.getElementById(id).value='');
+    document.getElementById('f-copies').value = 1;
+  }
+
+  async function saveBook() {
+    const id = document.getElementById('edit-id').value;
+    const body = {
+      title:document.getElementById('f-title').value.trim(),
+      author:document.getElementById('f-author').value.trim(),
+      isbn:document.getElementById('f-isbn').value.trim(),
+      category:document.getElementById('f-cat').value.trim(),
+      total_copies:parseInt(document.getElementById('f-copies').value)||1,
+      cover_url:document.getElementById('f-cover').value.trim(),
+      description:document.getElementById('f-desc').value.trim()
+    };
+    if (!body.title || !body.author) { showToast('Title and author are required','warning'); return; }
+    const r = await apiFetch(id ? `/books/${id}` : '/books/', { method: id ? 'PUT':'POST', body: JSON.stringify(body) });
+    if (!r?.ok) { showToast(r?.data?.error||'Error saving book','error'); return; }
+    showToast(id ? 'Book updated!' : 'Book added!', 'success');
+    closeModal('add-modal'); resetForm(); loadBooks();
+  }
+
+  async function deleteBook(id) {
+    const bk = BOOKS.find(x => x.id === id);
+    if (!confirm(`Delete "${bk ? bk.title : 'this book'}"?`)) return;
+    const r = await apiFetch(`/books/${id}`, { method:'DELETE' });
+    if (r?.ok) { showToast('Book deleted','success'); loadBooks(); }
+    else showToast(r?.data?.error||'Error deleting','error');
+  }
+
+  document.querySelector('[onclick="openModal(\'add-modal\')"]').addEventListener('click', resetForm);
+  loadCategories(); loadBooks();
+</script>
+</body>
+</html>

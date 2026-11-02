@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Who Is In — Admin LMS</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-left"><span class="topbar-title">Who Is In Library</span></div>
+      <div class="topbar-right"><button class="btn btn-outline btn-sm" onclick="refreshAll()">Refresh</button></div>
+    </header>
+    <main class="content">
+      <div class="card">
+        <div class="card-header">Currently In Library <span id="count-badge" class="badge badge-info">0</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Member ID</th><th>Phone</th><th>Check In Time</th><th>Action</th></tr></thead>
+            <tbody id="visitors-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header">Visit History</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Member ID</th><th>Check In Time</th><th>Check Out Time</th><th>Duration</th><th>Status</th></tr></thead>
+            <tbody id="history-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script>
+  if (!requireAuth('admin')) throw '';
+  function formatDuration(checkIn, checkOut) {
+    const inDt = parseDateTime(checkIn);
+    const outDt = parseDateTime(checkOut);
+    if (!inDt || !outDt) return '—';
+    const diffMs = outDt.getTime() - inDt.getTime();
+    if (!isFinite(diffMs) || diffMs < 0) return '—';
+    const totalMin = Math.floor(diffMs / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  async function load() {
+    const r = await apiFetch('/visitors/current');
+    const tbody = document.getElementById('visitors-tbody');
+    if (!r?.ok) return;
+    document.getElementById('count-badge').textContent = r.data.length;
+    if (!r.data.length) { tbody.innerHTML='<tr><td colspan="5"><div class="empty-state"><p>No visitors currently in library</p></div></td></tr>'; return; }
+    tbody.innerHTML = r.data.map(v => `
+      <tr>
+        <td><strong>${v.name}</strong></td>
+        <td><span class="badge badge-info">${v.member_id||'—'}</span></td>
+        <td>${v.phone||'—'}</td>
+        <td>${formatDateTime(v.check_in)}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="doCheckout(${v.user_id})">Check Out</button></td>
+      </tr>`).join('');
+  }
+
+  async function loadHistory() {
+    const r = await apiFetch('/visitors/history');
+    const tbody = document.getElementById('history-tbody');
+    if (!r?.ok) return;
+    const rows = (r.data || []).slice(0, 50);
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><p>No visit history yet</p></div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(v => {
+      const statusLabel = v.status === 'out' ? 'Checked Out' : 'Checked In';
+      return `
+        <tr>
+          <td><strong>${v.name}</strong></td>
+          <td><span class="badge badge-info">${v.member_id||'—'}</span></td>
+          <td>${formatDateTime(v.check_in)}</td>
+          <td>${v.check_out ? formatDateTime(v.check_out) : '—'}</td>
+          <td>${formatDuration(v.check_in, v.check_out)}</td>
+          <td>${statusLabel}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  async function refreshAll() {
+    await load();
+    await loadHistory();
+  }
+
+  async function doCheckout(uid) {
+    if (!confirm('Check out this visitor?')) return;
+    const r = await apiFetch(`/visitors/checkout/${uid}`, { method:'POST' });
+    if (r?.ok) { showToast('Checked out successfully', 'success'); refreshAll(); }
+    else showToast(r?.data?.error || 'Error checking out', 'error');
+  }
+  refreshAll();
+</script>
+</body>
+</html>

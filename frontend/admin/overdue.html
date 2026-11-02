@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Overdue — Admin LMS</title><link rel="stylesheet" href="/css/style.css"></head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar"><div class="topbar-left"><span class="topbar-title">Overdue Books</span></div></header>
+    <main class="content">
+      <div class="card">
+        <div class="card-header">All Overdue Books</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Book</th><th>Student</th><th>Phone</th><th>Due Date</th><th>Days Overdue</th><th>Fine</th><th>Action</th></tr></thead>
+            <tbody id="overdue-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script>
+  if (!requireAuth('admin')) throw '';
+  async function load() {
+    const r = await apiFetch('/issued/overdue');
+    const tbody = document.getElementById('overdue-tbody');
+    if (!r?.ok || !r.data.length) { tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">&#10003;</div><p>No overdue books</p></div></td></tr>'; return; }
+    tbody.innerHTML = r.data.map(i => `
+      <tr>
+        <td>${bookCell(i)}</td>
+        <td>${i.student_name}<br><small>${i.member_id}</small></td>
+        <td>${i.phone||'—'}</td>
+        <td style="color:#ef4444">${formatDate(i.due_date)}</td>
+        <td><span class="badge badge-danger">${i.overdue_days} days</span></td>
+        <td style="color:#ef4444;font-weight:600">Rs.${(i.overdue_days*10).toFixed(2)}</td>
+        <td><button class="btn btn-warning btn-sm" onclick="sendReminder(${i.user_id},${esc(JSON.stringify(i.title))},${esc(JSON.stringify(i.due_date))})">Send Reminder</button></td>
+      </tr>`).join('');
+  }
+  async function sendReminder(user_id, book_title, due_date) {
+    const r = await apiFetch('/issued/send-reminder', { method:'POST', body:JSON.stringify({user_id, book_title, due_date}) });
+    if (r?.ok) showToast('Reminder sent to student!', 'success');
+    else showToast('Error sending reminder','error');
+  }
+  load();
+</script>
+</body>
+</html>
